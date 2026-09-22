@@ -1,0 +1,16 @@
+# Local health records and workbook exports must never be committed.
+*.xlsx
+*.xls
+*.csv
+outputs/
+.tmp_previews/
+web/data/fitness-data.private.json
+
+# Local runtime files.
+node_modules/
+.next/
+out/
+dist/
+.sites-runtime/
+*.log
+.env*

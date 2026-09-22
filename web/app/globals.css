@@ -1,0 +1,87 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../vendor/shadcn-tailwind-4.13.0.css";
+
+:root {
+  --background: #f4f1e9;
+  --foreground: #17251f;
+  --card: #ffffff;
+  --card-foreground: #17251f;
+  --popover: #ffffff;
+  --popover-foreground: #17251f;
+  --primary: #173f35;
+  --primary-foreground: #ffffff;
+  --secondary: #e7eddf;
+  --secondary-foreground: #173f35;
+  --muted: #eef0ea;
+  --muted-foreground: #66736d;
+  --accent: #d7f49b;
+  --accent-foreground: #173f35;
+  --destructive: #b84031;
+  --border: #dde3dc;
+  --input: #dde3dc;
+  --ring: #4c7a66;
+  --chart-1: #173f35;
+  --chart-2: #f48c64;
+  --chart-3: #7ca66a;
+  --chart-4: #d9b85f;
+  --chart-5: #91a6a0;
+  --radius: 0.9rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 6px);
+  --font-sans: Arial, "Noto Sans TC", sans-serif;
+}
+
+* { box-sizing: border-box; }
+html { background: var(--background); }
+body {
+  margin: 0;
+  background:
+    radial-gradient(circle at 8% 0%, rgb(215 244 155 / 18%), transparent 28rem),
+    var(--background);
+  color: var(--foreground);
+  font-family: Arial, "Noto Sans TC", sans-serif;
+}
+button, input { font: inherit; }
+button { cursor: pointer; }
+.font-display { font-family: Georgia, "Noto Serif TC", serif; }
+.metric-card:nth-child(1) { background: #d7f49b; }
+.metric-card:nth-child(2) { background: #ffd8c8; }
+.metric-card:nth-child(3) { background: #d8e9e2; }
+.metric-card:nth-child(4) { background: #f5e8b7; }
+
+@media (max-width: 520px) {
+  input[type="date"] { max-width: 145px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior: auto !important; transition: none !important; animation: none !important; }
+}
