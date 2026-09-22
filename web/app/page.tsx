@@ -36,6 +36,7 @@ import {
   signedChange,
 } from "@/lib/metrics";
 import { fetchSheetData } from "@/lib/sheets-data";
+import { bodyComposition, inclusiveRangeStart, latestMassReading, summarizeFoodRange } from "@/lib/dashboard-data";
 
 type UserName = "Reason" | "Chloe";
 type DailyLog = {
@@ -135,6 +136,27 @@ function MetricCard({
   );
 }
 
+type NutritionTotals = { calories: number; protein_g: number; fat_g: number; carbs_g: number };
+
+function NutritionSummary({ totals }: { totals: NutritionTotals }) {
+  const items = [
+    { label: "熱量", value: Math.round(totals.calories), unit: "kcal" },
+    { label: "蛋白質", value: numberLabel(totals.protein_g), unit: "g" },
+    { label: "脂肪", value: numberLabel(totals.fat_g), unit: "g" },
+    { label: "碳水", value: numberLabel(totals.carbs_g), unit: "g" },
+  ];
+  return (
+    <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+      {items.map((item) => (
+        <div key={item.label} className="rounded-xl bg-slate-50 px-3 py-2">
+          <p className="text-xs text-slate-500">{item.label}</p>
+          <p className="mt-1 font-semibold tabular-nums text-slate-800">{item.value} <span className="text-xs font-normal text-slate-500">{item.unit}</span></p>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 function NutrientProgress({ label, actual, target, unit }: { label: string; actual: number; target: number; unit: string }) {
   const percent = completionPercent(actual, target);
   return (
@@ -223,20 +245,39 @@ export default function Home() {
   const [selectedDateByUser, setSelectedDateByUser] = useState<Record<UserName, string>>({ Reason: "", Chloe: "" });
   const selectedDate = selectedDateByUser[user] || availableDates.at(-1) || "";
   const selectedDaily = userDaily.find((entry) => entry.date === selectedDate);
-  const selectedFood = userFood.filter((entry) => entry.date === selectedDate);
   const selectedNutrition = nutritionByDate[selectedDate] ?? { calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 };
   const dayType = selectedDaily?.exercised ? "exercise" : "rest";
   const selectedGoal = goalForDate(data.goals, user, dayType, selectedDate);
   const currentWeight = latestMetric(userDaily, "weight_kg") as number | null;
   const startingWeight = firstMetric(userDaily, "weight_kg") as number | null;
-  const currentBodyFat = latestMetric(userDaily, "body_fat_pct") as number | null;
-  const currentMuscle = latestMetric(userDaily, "muscle_pct") as number | null;
+  // A percentage and weight must come from the same measurement to produce a meaningful mass.
+  const latestFat = latestMassReading(userDaily, "body_fat_pct", "fatMassKg");
+  const latestMuscle = latestMassReading(userDaily, "muscle_pct", "muscleMassKg");
   const trendData = userDaily.map((entry) => ({
     ...entry,
     label: dateLabel(entry.date),
+    ...bodyComposition(entry),
     calories: nutritionByDate[entry.date]?.calories ?? null,
     protein: nutritionByDate[entry.date]?.protein_g ?? null,
   }));
+  const [foodDateRange, setFoodDateRange] = useState<Record<UserName, { start: string; end: string }>>({
+    Reason: { start: "", end: "" },
+    Chloe: { start: "", end: "" },
+  });
+  const range = foodDateRange[user];
+  const latestFoodDate = [...new Set(userFood.map((entry) => entry.date))].sort().at(-1) ?? "";
+  const foodSummary = useMemo(
+    () => summarizeFoodRange(userFood, range.start, range.end),
+    [userFood, range.start, range.end],
+  );
+  const invalidFoodRange = Boolean(range.start && range.end && range.start > range.end);
+  const updateFoodRange = (next: { start: string; end: string }) =>
+    setFoodDateRange((previous) => ({ ...previous, [user]: next }));
+  const setFoodPreset = (days: number | null) =>
+    updateFoodRange(days == null ? { start: "", end: "" } : {
+      start: inclusiveRangeStart(latestFoodDate, days),
+      end: latestFoodDate,
+    });
   const trackedDays = new Set(userFood.map((entry) => entry.date)).size;
   const proteinTargetDays = availableDates.filter((date) => {
     const daily = userDaily.find((entry) => entry.date === date);
@@ -285,8 +326,8 @@ export default function Home() {
         </div>
         <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="目前體重" value={numberLabel(currentWeight)} unit="kg" detail={`起始至今 ${signedChange(currentWeight, startingWeight)} kg`} icon={Scale} />
-          <MetricCard label="目前體脂" value={numberLabel(currentBodyFat)} unit="%" detail="以最近一次有效量測為準" icon={Activity} />
-          <MetricCard label="目前肌肉率" value={numberLabel(currentMuscle)} unit="%" detail="空白量測不列入計算" icon={Dumbbell} />
+          <MetricCard label="目前體脂重量" value={numberLabel(latestFat?.massKg ?? null)} unit="kg" detail={latestFat ? `體脂率 ${numberLabel(latestFat.percentage)}% · ${latestFat.date}` : "需同日體重與體脂率"} icon={Activity} />
+          <MetricCard label="估計肌肉重量" value={numberLabel(latestMuscle?.massKg ?? null)} unit="kg" detail={latestMuscle ? `肌肉率 ${numberLabel(latestMuscle.percentage)}% · ${latestMuscle.date}` : "需同日體重與肌肉率"} icon={Dumbbell} />
           <MetricCard label="蛋白質達標" value={`${proteinTargetDays}`} unit={`/ ${trackedDays} 天`} detail="依運動日／休息日目標判斷" icon={Sparkles} />
         </section>
 
@@ -300,19 +341,40 @@ export default function Home() {
           <TabsContent value="overview" className="space-y-5">
             <div className="grid gap-5 xl:grid-cols-[1.55fr_1fr]">
               <Card className="border-0 bg-white shadow-sm">
-                <CardHeader className="pb-2"><CardTitle className="font-display text-xl">體重與體脂趨勢</CardTitle></CardHeader>
-                <CardContent className="h-[330px] pl-1 pr-4">
-                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
-                    <LineChart data={trendData} margin={{ top: 16, right: 8, left: -14, bottom: 0 }}>
-                      <CartesianGrid stroke="#e9e5dc" strokeDasharray="4 4" vertical={false} />
-                      <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                      <YAxis yAxisId="weight" domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                      <YAxis yAxisId="fat" orientation="right" domain={["dataMin - 2", "dataMax + 2"]} hide />
-                      <ChartTooltip contentStyle={{ borderRadius: 14, border: "1px solid #e2e8f0" }} />
-                      <Line yAxisId="weight" type="monotone" dataKey="weight_kg" name="體重 kg" stroke="#173f35" strokeWidth={3} dot={{ r: 3, fill: "#d7f49b", strokeWidth: 2 }} connectNulls isAnimationActive={false} />
-                      <Line yAxisId="fat" type="monotone" dataKey="body_fat_pct" name="體脂 %" stroke="#f48c64" strokeWidth={2} strokeDasharray="6 5" dot={false} connectNulls isAnimationActive={false} />
-                    </LineChart>
-                  </ResponsiveContainer>
+                <CardHeader className="pb-2">
+                  <CardTitle className="font-display text-xl">體重與身體組成趨勢</CardTitle>
+                  <p className="text-xs text-slate-500">體脂重量與除脂體重僅依同日量測換算；除脂體重包含肌肉、水分、骨骼等，並非肌肉重量。</p>
+                </CardHeader>
+                <CardContent className="space-y-3 px-2 pb-5 pr-4">
+                  <div>
+                    <p className="px-4 text-xs font-semibold text-[#173f35]">體重 · kg</p>
+                    <div className="h-[155px]">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={140}>
+                        <LineChart data={trendData} margin={{ top: 12, right: 8, left: -14, bottom: 0 }}>
+                          <CartesianGrid stroke="#e9e5dc" strokeDasharray="4 4" vertical={false} />
+                          <XAxis dataKey="label" hide />
+                          <YAxis domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                          <ChartTooltip contentStyle={{ borderRadius: 14, border: "1px solid #e2e8f0" }} />
+                          <Line type="monotone" dataKey="weight_kg" name="體重 kg" stroke="#173f35" strokeWidth={3} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                  <div>
+                    <p className="px-4 text-xs font-semibold"><span className="text-[#e66f45]">● 體脂重量</span><span className="ml-4 text-[#3b82a0]">● 除脂體重</span><span className="ml-2 text-slate-400">· kg</span></p>
+                    <div className="h-[185px]">
+                      <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={170}>
+                        <LineChart data={trendData} margin={{ top: 12, right: 8, left: -14, bottom: 0 }}>
+                          <CartesianGrid stroke="#e9e5dc" strokeDasharray="4 4" vertical={false} />
+                          <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                          <YAxis domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                          <ChartTooltip contentStyle={{ borderRadius: 14, border: "1px solid #e2e8f0" }} />
+                          <Line type="monotone" dataKey="fatMassKg" name="體脂重量 kg" stroke="#e66f45" strokeWidth={2.5} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                          <Line type="monotone" dataKey="fatFreeMassKg" name="除脂體重 kg" stroke="#3b82a0" strokeWidth={2.5} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
                 </CardContent>
               </Card>
 
@@ -362,29 +424,62 @@ export default function Home() {
 
           <TabsContent value="food">
             <Card className="border-0 bg-white shadow-sm">
-              <CardHeader className="flex-row items-center justify-between gap-4">
-                <div><CardTitle className="font-display text-xl">每日飲食明細</CardTitle><p className="mt-1 text-sm text-slate-500">共 {selectedFood.length} 筆紀錄</p></div>
-                <input aria-label="選擇飲食日期" type="date" value={selectedDate} min={availableDates[0]} max={availableDates.at(-1)} onChange={(event) => changeDate(event.target.value)} className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium outline-none focus:border-emerald-700" />
+              <CardHeader className="space-y-4">
+                <div>
+                  <CardTitle className="font-display text-xl">每日飲食明細</CardTitle>
+                  <p className="mt-1 text-sm text-slate-500">依日期分組 · {foodSummary.groups.length} 天、{foodSummary.count} 筆紀錄</p>
+                </div>
+                <div className="flex flex-wrap items-end gap-3">
+                  <label className="space-y-1 text-xs text-slate-600">開始日期
+                    <input aria-label="飲食開始日期" type="date" value={range.start} onChange={(event) => updateFoodRange({ ...range, start: event.target.value })}
+                      className="block rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium outline-none focus:border-emerald-700" />
+                  </label>
+                  <label className="space-y-1 text-xs text-slate-600">結束日期
+                    <input aria-label="飲食結束日期" type="date" value={range.end} onChange={(event) => updateFoodRange({ ...range, end: event.target.value })}
+                      className="block rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium outline-none focus:border-emerald-700" />
+                  </label>
+                  <div className="flex gap-2">
+                    <button type="button" onClick={() => setFoodPreset(7)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs hover:bg-slate-50">近 7 天</button>
+                    <button type="button" onClick={() => setFoodPreset(30)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs hover:bg-slate-50">近 30 天</button>
+                    <button type="button" onClick={() => setFoodPreset(null)} className="rounded-xl border border-slate-200 px-3 py-2 text-xs hover:bg-slate-50">全部</button>
+                  </div>
+                </div>
+                {invalidFoodRange && <p role="alert" className="text-sm text-red-700">開始日期不能晚於結束日期。</p>}
               </CardHeader>
-              <CardContent>
-                {selectedFood.length ? (
-                  <div className="space-y-3">
-                    {selectedFood.map((item) => (
-                      <article key={item.id} className="grid gap-4 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-                        <div className="flex items-start gap-3">
-                          <span className="rounded-xl bg-[#d7f49b]/70 p-2 text-[#173f35]"><Utensils size={18} /></span>
-                          <div><p className="font-semibold">{item.food_name ?? item.meal_type ?? "未命名紀錄"}</p><p className="mt-1 text-xs text-slate-500">{item.meal_type && item.food_name ? item.meal_type : item.note ?? "未填寫餐別"}</p></div>
+              <CardContent className="space-y-5">
+                <section className="space-y-3 rounded-2xl bg-[#e8f3e9] p-4" aria-label="區間總量">
+                  <p className="text-sm font-semibold text-emerald-950">區間總量</p>
+                  <NutritionSummary totals={foodSummary.totals} />
+                </section>
+                {foodSummary.groups.length ? (
+                  <div className="space-y-5">
+                    {foodSummary.groups.map((group) => (
+                      <section key={group.date} className="space-y-3 rounded-2xl border border-slate-200 p-4" aria-label={`${group.date} 飲食紀錄`}>
+                        <div className="flex flex-wrap items-baseline justify-between gap-2">
+                          <h3 className="font-display text-lg font-semibold">{group.date}</h3>
+                          <p className="text-xs text-slate-500">{group.items.length} 筆 · 當日合計</p>
                         </div>
-                        <div className="grid grid-cols-4 gap-3 text-right text-xs text-slate-500 sm:min-w-[340px]">
-                          <span><b className="block text-base text-slate-800">{Math.round(item.calories ?? 0)}</b>kcal</span>
-                          <span><b className="block text-base text-slate-800">{numberLabel(item.protein_g)}</b>蛋白質</span>
-                          <span><b className="block text-base text-slate-800">{numberLabel(item.fat_g)}</b>脂肪</span>
-                          <span><b className="block text-base text-slate-800">{numberLabel(item.carbs_g)}</b>碳水</span>
+                        <NutritionSummary totals={group.totals} />
+                        <div className="space-y-2">
+                          {group.items.map((item: FoodLog) => (
+                            <article key={item.id} className="grid gap-4 rounded-2xl border border-slate-100 bg-slate-50/70 p-4 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+                              <div className="flex items-start gap-3">
+                                <span className="rounded-xl bg-[#d7f49b]/70 p-2 text-[#173f35]"><Utensils size={18} /></span>
+                                <div><p className="font-semibold">{item.food_name ?? item.meal_type ?? "未命名紀錄"}</p><p className="mt-1 text-xs text-slate-500">{item.meal_type && item.food_name ? item.meal_type : item.note ?? "未填寫餐別"}</p></div>
+                              </div>
+                              <div className="grid grid-cols-4 gap-3 text-right text-xs text-slate-500 sm:min-w-[340px]">
+                                <span><b className="block text-base text-slate-800">{Math.round(item.calories ?? 0)}</b>kcal</span>
+                                <span><b className="block text-base text-slate-800">{numberLabel(item.protein_g)}</b>蛋白質</span>
+                                <span><b className="block text-base text-slate-800">{numberLabel(item.fat_g)}</b>脂肪</span>
+                                <span><b className="block text-base text-slate-800">{numberLabel(item.carbs_g)}</b>碳水</span>
+                              </div>
+                            </article>
+                          ))}
                         </div>
-                      </article>
+                      </section>
                     ))}
                   </div>
-                ) : <div className="grid min-h-52 place-items-center text-center text-slate-500"><div><Utensils className="mx-auto mb-3 opacity-35" /><p>這一天尚無飲食紀錄</p></div></div>}
+                ) : <div className="grid min-h-52 place-items-center text-center text-slate-500"><div><Utensils className="mx-auto mb-3 opacity-35" /><p>{invalidFoodRange ? "請調整日期區間" : "此區間沒有飲食紀錄"}</p></div></div>}
               </CardContent>
             </Card>
           </TabsContent>
