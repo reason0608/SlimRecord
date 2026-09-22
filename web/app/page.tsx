@@ -343,34 +343,36 @@ export default function Home() {
               <Card className="border-0 bg-white shadow-sm">
                 <CardHeader className="pb-2">
                   <CardTitle className="font-display text-xl">體重與身體組成趨勢</CardTitle>
-                  <p className="text-xs text-slate-500">體脂重量與除脂體重僅依同日量測換算；除脂體重包含肌肉、水分、骨骼等，並非肌肉重量。</p>
+                  <p className="text-xs text-slate-500">體脂重量、除脂體重與估計肌肉重量僅依同日量測換算；上圖左右軸分別為體重與除脂體重。</p>
                 </CardHeader>
                 <CardContent className="space-y-3 px-2 pb-5 pr-4">
                   <div>
-                    <p className="px-4 text-xs font-semibold text-[#173f35]">體重 · kg</p>
+                    <p className="px-4 text-xs font-semibold"><span className="text-[#173f35]">● 體重</span><span className="ml-4 text-[#3b82a0]">● 除脂體重</span><span className="ml-2 text-slate-400">· kg</span></p>
                     <div className="h-[155px]">
                       <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={140}>
-                        <LineChart data={trendData} margin={{ top: 12, right: 8, left: -14, bottom: 0 }}>
+                        <LineChart data={trendData} margin={{ top: 12, right: 4, left: 0, bottom: 0 }}>
                           <CartesianGrid stroke="#e9e5dc" strokeDasharray="4 4" vertical={false} />
                           <XAxis dataKey="label" hide />
-                          <YAxis domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                          <YAxis yAxisId="weight" width={44} domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 12, fill: "#173f35" }} tickFormatter={(value: number) => value.toFixed(1)} axisLine={false} tickLine={false} />
+                          <YAxis yAxisId="lean" orientation="right" width={44} domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 12, fill: "#3b82a0" }} tickFormatter={(value: number) => value.toFixed(1)} axisLine={false} tickLine={false} />
                           <ChartTooltip contentStyle={{ borderRadius: 14, border: "1px solid #e2e8f0" }} />
-                          <Line type="monotone" dataKey="weight_kg" name="體重 kg" stroke="#173f35" strokeWidth={3} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                          <Line yAxisId="weight" type="monotone" dataKey="weight_kg" name="體重 kg" stroke="#173f35" strokeWidth={3} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                          <Line yAxisId="lean" type="monotone" dataKey="fatFreeMassKg" name="除脂體重 kg" stroke="#3b82a0" strokeWidth={2.5} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
                   </div>
                   <div>
-                    <p className="px-4 text-xs font-semibold"><span className="text-[#e66f45]">● 體脂重量</span><span className="ml-4 text-[#3b82a0]">● 除脂體重</span><span className="ml-2 text-slate-400">· kg</span></p>
+                    <p className="px-4 text-xs font-semibold"><span className="text-[#e66f45]">● 體脂重量</span><span className="ml-4 text-[#3b82a0]">● 估計肌肉重量</span><span className="ml-2 text-slate-400">· kg</span></p>
                     <div className="h-[185px]">
                       <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={170}>
-                        <LineChart data={trendData} margin={{ top: 12, right: 8, left: -14, bottom: 0 }}>
+                        <LineChart data={trendData} margin={{ top: 12, right: 8, left: 0, bottom: 0 }}>
                           <CartesianGrid stroke="#e9e5dc" strokeDasharray="4 4" vertical={false} />
                           <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                          <YAxis domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                          <YAxis width={44} domain={["dataMin - 2", "dataMax + 2"]} tick={{ fontSize: 12, fill: "#64748b" }} tickFormatter={(value: number) => value.toFixed(1)} axisLine={false} tickLine={false} />
                           <ChartTooltip contentStyle={{ borderRadius: 14, border: "1px solid #e2e8f0" }} />
                           <Line type="monotone" dataKey="fatMassKg" name="體脂重量 kg" stroke="#e66f45" strokeWidth={2.5} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
-                          <Line type="monotone" dataKey="fatFreeMassKg" name="除脂體重 kg" stroke="#3b82a0" strokeWidth={2.5} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                          <Line type="monotone" dataKey="muscleMassKg" name="估計肌肉重量 kg" stroke="#3b82a0" strokeWidth={2.5} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
                         </LineChart>
                       </ResponsiveContainer>
                     </div>
