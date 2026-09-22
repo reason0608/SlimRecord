@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Activity,
   CalendarDays,
@@ -35,6 +35,7 @@ import {
   latestMetric,
   signedChange,
 } from "@/lib/metrics";
+import { fetchSheetData } from "@/lib/sheets-data";
 
 type UserName = "Reason" | "Chloe";
 type DailyLog = {
@@ -77,11 +78,24 @@ type Goal = {
   effective_from: string;
 };
 
-const data = fitnessData as {
+type DashboardData = {
   dailyLogs: DailyLog[];
   foodLogs: FoodLog[];
   exerciseLogs: ExerciseLog[];
   goals: Goal[];
+};
+
+const demoData = fitnessData as DashboardData;
+const spreadsheetId = "1CNn3qJeZ90h61oi9OlPiZxGvGPcl3pND_CKGjX7kHHE";
+const googleClientId = process.env.NEXT_PUBLIC_GOOGLE_CLIENT_ID ?? "";
+
+type GoogleOAuth = {
+  accounts: { oauth2: { initTokenClient: (options: {
+    client_id: string;
+    scope: string;
+    callback: (response: { access_token?: string; error?: string }) => void;
+    error_callback: () => void;
+  }) => { requestAccessToken: () => void } } };
 };
 
 const dateLabel = (date: string) =>
@@ -138,12 +152,69 @@ function NutrientProgress({ label, actual, target, unit }: { label: string; actu
 
 export default function Home() {
   const [user, setUser] = useState<UserName>("Reason");
+  const [liveData, setLiveData] = useState<DashboardData | null>(null);
+  const [googleReady, setGoogleReady] = useState(false);
+  const [loadingSheet, setLoadingSheet] = useState(false);
+  const [sheetError, setSheetError] = useState("");
+  const data = liveData ?? demoData;
+
+  useEffect(() => {
+    if (!googleClientId) return;
+    const googleWindow = window as Window & { google?: GoogleOAuth };
+    if (googleWindow.google?.accounts?.oauth2) {
+      queueMicrotask(() => setGoogleReady(true));
+      return;
+    }
+    const script = document.createElement("script");
+    script.src = "https://accounts.google.com/gsi/client";
+    script.async = true;
+    script.onload = () => setGoogleReady(true);
+    script.onerror = () => setSheetError("無法載入 Google 登入功能，請檢查網路連線。");
+    document.head.appendChild(script);
+    return () => {
+      script.onload = null;
+      script.onerror = null;
+    };
+  }, []);
+
+  /** Start OAuth from the button gesture; keep access tokens only inside this callback. */
+  const connectSheet = () => {
+    const google = (window as Window & { google?: GoogleOAuth }).google;
+    if (!google?.accounts?.oauth2 || !googleClientId) return;
+    setLoadingSheet(true);
+    setSheetError("");
+    google.accounts.oauth2.initTokenClient({
+      client_id: googleClientId,
+      scope: "https://www.googleapis.com/auth/spreadsheets.readonly",
+      callback: async (response) => {
+        if (!response.access_token) {
+          setSheetError("Google 授權未完成，請重試。");
+          setLoadingSheet(false);
+          return;
+        }
+        try {
+          const sheetData = await fetchSheetData(response.access_token, spreadsheetId) as DashboardData;
+          setLiveData(sheetData);
+          setSelectedDateByUser({ Reason: "", Chloe: "" });
+        } catch (error) {
+          setSheetError(error instanceof Error ? error.message : "讀取試算表失敗。");
+        } finally {
+          setLoadingSheet(false);
+        }
+      },
+      error_callback: () => {
+        setSheetError("Google 登入視窗已關閉或無法開啟，請重試。");
+        setLoadingSheet(false);
+      },
+    }).requestAccessToken();
+  };
+
   const userDaily = useMemo(
     () => data.dailyLogs.filter((entry) => entry.user === user).sort((a, b) => a.date.localeCompare(b.date)),
-    [user],
+    [data, user],
   );
-  const userFood = useMemo(() => data.foodLogs.filter((entry) => entry.user === user), [user]);
-  const userExercise = useMemo(() => data.exerciseLogs.filter((entry) => entry.user === user), [user]);
+  const userFood = useMemo(() => data.foodLogs.filter((entry) => entry.user === user), [data, user]);
+  const userExercise = useMemo(() => data.exerciseLogs.filter((entry) => entry.user === user), [data, user]);
   const nutritionByDate = useMemo(() => aggregateFoodByDate(userFood), [userFood]);
   const availableDates = useMemo(
     () => [...new Set([...userDaily.map((entry) => entry.date), ...userFood.map((entry) => entry.date)])].sort(),
@@ -199,7 +270,19 @@ export default function Home() {
           </div>
         </header>
 
-        <p className="mb-4 rounded-xl border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-950">目前顯示的是示範資料，不含真實健康紀錄。</p>
+        <div className={`mb-4 flex flex-wrap items-center justify-between gap-3 rounded-xl border px-4 py-3 text-sm ${liveData ? "border-emerald-300 bg-emerald-50 text-emerald-950" : "border-amber-300 bg-amber-50 text-amber-950"}`}>
+          <div>
+            <p>{liveData ? "已載入 Google 試算表資料（僅在這個瀏覽器頁面顯示）。" : "目前顯示示範資料，不含真實健康紀錄。"}</p>
+            {sheetError && <p role="alert" className="mt-1 text-red-700">{sheetError}</p>}
+            {!googleClientId && <p className="mt-1">尚未設定 Google OAuth Client ID，請參閱 README。</p>}
+          </div>
+          {googleClientId && (
+            <button type="button" onClick={connectSheet} disabled={!googleReady || loadingSheet}
+              className="rounded-xl bg-[#173f35] px-4 py-2 font-semibold text-white disabled:cursor-not-allowed disabled:opacity-50">
+              {loadingSheet ? "讀取中…" : liveData ? "重新載入試算表" : googleReady ? "連線 Google 試算表" : "載入 Google 登入中…"}
+            </button>
+          )}
+        </div>
         <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
           <MetricCard label="目前體重" value={numberLabel(currentWeight)} unit="kg" detail={`起始至今 ${signedChange(currentWeight, startingWeight)} kg`} icon={Scale} />
           <MetricCard label="目前體脂" value={numberLabel(currentBodyFat)} unit="%" detail="以最近一次有效量測為準" icon={Activity} />
@@ -327,7 +410,7 @@ export default function Home() {
         </Tabs>
 
         <footer className="mt-8 flex flex-col gap-2 border-t border-emerald-950/10 py-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
-          <p>資料為靜態快照；空白量測不視為 0。</p>
+          <p>{liveData ? "即時讀取試算表；重新載入頁面後須再次授權。空白量測不視為 0。" : "目前為示範資料；空白量測不視為 0。"}</p>
           <p>最近資料日期：{availableDates.at(-1) ?? "—"}</p>
         </footer>
       </div>
