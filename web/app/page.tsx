@@ -8,12 +8,13 @@ import {
   Flame,
   Scale,
   Sparkles,
+  Trophy,
   TrendingDown,
   Utensils,
 } from "lucide-react";
 import {
   Area,
-  AreaChart,
+  ComposedChart,
   CartesianGrid,
   Line,
   LineChart,
@@ -36,7 +37,7 @@ import {
   signedChange,
 } from "@/lib/metrics";
 import { fetchSheetData } from "@/lib/sheets-data";
-import { bodyComposition, inclusiveRangeStart, latestMassReading, summarizeFoodRange } from "@/lib/dashboard-data";
+import { bodyComposition, bodyScoreTrend, inclusiveRangeStart, latestMassReading, summarizeFoodRange } from "@/lib/dashboard-data";
 
 type UserName = "Reason" | "Chloe";
 type DailyLog = {
@@ -253,13 +254,21 @@ export default function Home() {
   // A percentage and weight must come from the same measurement to produce a meaningful mass.
   const latestFat = latestMassReading(userDaily, "body_fat_pct", "fatMassKg");
   const latestMuscle = latestMassReading(userDaily, "muscle_pct", "muscleMassKg");
-  const trendData = userDaily.map((entry) => ({
-    ...entry,
-    label: dateLabel(entry.date),
-    ...bodyComposition(entry),
-    calories: nutritionByDate[entry.date]?.calories ?? null,
-    protein: nutritionByDate[entry.date]?.protein_g ?? null,
-  }));
+  const scoreTrend = bodyScoreTrend(userDaily);
+  const latestScore = scoreTrend.at(-1) ?? null;
+  const trendData = userDaily.map((entry) => {
+    const goal = goalForDate(data.goals, user, entry.exercised ? "exercise" : "rest", entry.date);
+    return {
+      ...entry,
+      label: dateLabel(entry.date),
+      ...bodyComposition(entry),
+      calories: nutritionByDate[entry.date]?.calories ?? null,
+      protein: nutritionByDate[entry.date]?.protein_g ?? null,
+      calorieTarget: goal?.calories ?? null,
+      proteinTarget: goal?.protein ?? null,
+    };
+  });
+  const scoreChartData = scoreTrend.map((point: { date: string; score: number }) => ({ ...point, label: dateLabel(point.date) }));
   const [foodDateRange, setFoodDateRange] = useState<Record<UserName, { start: string; end: string }>>({
     Reason: { start: "", end: "" },
     Chloe: { start: "", end: "" },
@@ -324,11 +333,12 @@ export default function Home() {
             </button>
           )}
         </div>
-        <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <MetricCard label="目前體重" value={numberLabel(currentWeight)} unit="kg" detail={`起始至今 ${signedChange(currentWeight, startingWeight)} kg`} icon={Scale} />
           <MetricCard label="目前體脂重量" value={numberLabel(latestFat?.massKg ?? null)} unit="kg" detail={latestFat ? `體脂率 ${numberLabel(latestFat.percentage)}% · ${latestFat.date}` : "需同日體重與體脂率"} icon={Activity} />
           <MetricCard label="估計肌肉重量" value={numberLabel(latestMuscle?.massKg ?? null)} unit="kg" detail={latestMuscle ? `肌肉率 ${numberLabel(latestMuscle.percentage)}% · ${latestMuscle.date}` : "需同日體重與肌肉率"} icon={Dumbbell} />
           <MetricCard label="蛋白質達標" value={`${proteinTargetDays}`} unit={`/ ${trackedDays} 天`} detail="依運動日／休息日目標判斷" icon={Sparkles} />
+          <MetricCard label="目前分數" value={numberLabel(latestScore?.score ?? null, 2)} unit="分" detail="公式：體脂減少% + 3 × MAX(肌肉增加%, 0)" icon={Trophy} />
         </section>
 
         <Tabs defaultValue="overview" className="space-y-5">
@@ -423,21 +433,50 @@ export default function Home() {
               </Card>
             </div>
 
-            <Card className="border-0 bg-white shadow-sm">
-              <CardHeader className="pb-2"><CardTitle className="font-display text-xl">每日熱量攝取</CardTitle></CardHeader>
-              <CardContent className="h-[280px] pl-1 pr-4">
-                <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={260}>
-                  <AreaChart data={trendData} margin={{ top: 15, right: 8, left: -14, bottom: 0 }}>
-                    <defs><linearGradient id="calorieFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f48c64" stopOpacity={0.55} /><stop offset="100%" stopColor="#f48c64" stopOpacity={0.03} /></linearGradient></defs>
-                    <CartesianGrid stroke="#e9e5dc" strokeDasharray="4 4" vertical={false} />
-                    <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                    <YAxis tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
-                    <ChartTooltip contentStyle={{ borderRadius: 14, border: "1px solid #e2e8f0" }} />
-                    <Area type="monotone" dataKey="calories" name="熱量 kcal" stroke="#e66f45" strokeWidth={2.5} fill="url(#calorieFill)" isAnimationActive={false} />
-                  </AreaChart>
-                </ResponsiveContainer>
-              </CardContent>
-            </Card>
+            <div className="grid gap-5 xl:grid-cols-2">
+              <Card className="border-0 bg-white shadow-sm">
+                <CardHeader className="pb-2">
+                  <CardTitle className="font-display text-xl">每日熱量與蛋白質</CardTitle>
+                  <p className="text-xs text-slate-500">實線為實際攝取，虛線為當日運動／休息目標。</p>
+                </CardHeader>
+                <CardContent className="h-[300px] pl-1 pr-4">
+                  <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={280}>
+                    <ComposedChart data={trendData} margin={{ top: 15, right: 4, left: 0, bottom: 0 }}>
+                      <defs><linearGradient id="calorieFill" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stopColor="#f48c64" stopOpacity={0.45} /><stop offset="100%" stopColor="#f48c64" stopOpacity={0.03} /></linearGradient></defs>
+                      <CartesianGrid stroke="#e9e5dc" strokeDasharray="4 4" vertical={false} />
+                      <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="calories" width={44} tick={{ fontSize: 11, fill: "#e66f45" }} axisLine={false} tickLine={false} />
+                      <YAxis yAxisId="protein" orientation="right" width={36} tick={{ fontSize: 11, fill: "#3b82a0" }} axisLine={false} tickLine={false} />
+                      <ChartTooltip formatter={(value) => typeof value === "number" ? value.toFixed(1) : value} contentStyle={{ borderRadius: 14, border: "1px solid #e2e8f0" }} />
+                      <Area yAxisId="calories" type="monotone" dataKey="calories" name="熱量 kcal" stroke="#e66f45" strokeWidth={2.5} fill="url(#calorieFill)" connectNulls isAnimationActive={false} />
+                      <Line yAxisId="calories" type="stepAfter" dataKey="calorieTarget" name="熱量目標 kcal" stroke="#e66f45" strokeWidth={1.5} strokeDasharray="6 5" dot={false} connectNulls isAnimationActive={false} />
+                      <Line yAxisId="protein" type="monotone" dataKey="protein" name="蛋白質 g" stroke="#3b82a0" strokeWidth={2.5} dot={{ r: 3 }} connectNulls isAnimationActive={false} />
+                      <Line yAxisId="protein" type="stepAfter" dataKey="proteinTarget" name="蛋白質目標 g" stroke="#3b82a0" strokeWidth={1.5} strokeDasharray="6 5" dot={false} connectNulls isAnimationActive={false} />
+                    </ComposedChart>
+                  </ResponsiveContainer>
+                </CardContent>
+              </Card>
+
+              <Card className="border-0 bg-white shadow-sm">
+                <CardHeader className="pb-2">
+                  <CardTitle className="font-display text-xl">分數走勢</CardTitle>
+                  <p className="text-xs text-slate-500">體脂減少% + 3 × MAX(肌肉增加%, 0)，以第一筆完整量測為基準。</p>
+                </CardHeader>
+                <CardContent className="h-[300px] pl-1 pr-4">
+                  {scoreChartData.length ? (
+                    <ResponsiveContainer width="100%" height="100%" minWidth={0} minHeight={280}>
+                      <LineChart data={scoreChartData} margin={{ top: 15, right: 8, left: 0, bottom: 0 }}>
+                        <CartesianGrid stroke="#e9e5dc" strokeDasharray="4 4" vertical={false} />
+                        <XAxis dataKey="label" tick={{ fontSize: 12, fill: "#64748b" }} axisLine={false} tickLine={false} />
+                        <YAxis width={44} tick={{ fontSize: 11, fill: "#64748b" }} tickFormatter={(value: number) => value.toFixed(1)} axisLine={false} tickLine={false} />
+                        <ChartTooltip formatter={(value) => typeof value === "number" ? value.toFixed(2) : value} contentStyle={{ borderRadius: 14, border: "1px solid #e2e8f0" }} />
+                        <Line type="monotone" dataKey="score" name="分數" stroke="#7c3aed" strokeWidth={3} dot={{ r: 4, fill: "#d8b4fe" }} isAnimationActive={false} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  ) : <div className="grid h-full place-items-center text-sm text-slate-500">需至少一筆同時含體重、體脂率及肌肉率的量測。</div>}
+                </CardContent>
+              </Card>
+            </div>
           </TabsContent>
 
           <TabsContent value="food">

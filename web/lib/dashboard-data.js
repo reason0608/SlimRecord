@@ -24,6 +24,31 @@ export function latestMassReading(records, percentageKey, massKey) {
   return null;
 }
 
+/** Build score points against the first complete body-composition measurement.
+ * Fat loss is positive; muscle loss never subtracts points.
+ */
+export function bodyScoreTrend(records) {
+  const complete = records
+    .map((record) => ({ ...record, ...bodyComposition(record) }))
+    .filter((record) => record.fatMassKg != null && record.muscleMassKg != null)
+    .sort((a, b) => a.date.localeCompare(b.date));
+  const baseline = complete[0];
+  if (!baseline || baseline.fatMassKg <= 0 || baseline.muscleMassKg <= 0) return [];
+
+  return complete.map((record) => {
+    const fatChangePercent =
+      ((baseline.fatMassKg - record.fatMassKg) / baseline.fatMassKg) * 100;
+    const muscleChangePercent =
+      ((record.muscleMassKg - baseline.muscleMassKg) / baseline.muscleMassKg) * 100;
+    return {
+      date: record.date,
+      fatChangePercent,
+      muscleChangePercent,
+      score: fatChangePercent + 3 * Math.max(muscleChangePercent, 0),
+    };
+  });
+}
+
 /** Group food entries by ISO date (newest first), with per-day and whole-range totals. */
 export function summarizeFoodRange(logs, startDate = "", endDate = "") {
   const emptyTotals = () => ({ calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 });

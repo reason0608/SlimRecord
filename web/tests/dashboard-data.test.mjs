@@ -3,6 +3,7 @@ import test from "node:test";
 
 import {
   bodyComposition,
+  bodyScoreTrend,
   inclusiveRangeStart,
   latestMassReading,
   summarizeFoodRange,
@@ -28,6 +29,30 @@ test("latestMassReading never joins a newer percentage to an older weight", () =
   assert.deepEqual(latestMassReading(records, "body_fat_pct", "fatMassKg"), {
     date: "2026-09-09", percentage: 25, massKg: 20,
   });
+});
+
+test("bodyScoreTrend rewards fat loss and only positive muscle change", () => {
+  const records = [
+    { date: "2026-09-01", weight_kg: 100, body_fat_pct: 20, muscle_pct: 40 },
+    { date: "2026-09-02", weight_kg: 95, body_fat_pct: 20, muscle_pct: 40 },
+    { date: "2026-09-03", weight_kg: 100, body_fat_pct: 18, muscle_pct: 42 },
+  ];
+  const result = bodyScoreTrend(records);
+  assert.equal(result[0].score, 0);
+  // Day 2: 5% fat loss, muscle fell 5% so no muscle penalty.
+  assert.equal(result[1].score, 5);
+  // Day 3: 10% fat loss plus 3 × 5% muscle gain.
+  assert.equal(result[2].score, 25);
+});
+
+test("bodyScoreTrend uses the first complete record and skips incomplete days", () => {
+  const result = bodyScoreTrend([
+    { date: "2026-09-01", weight_kg: 100, body_fat_pct: null, muscle_pct: 40 },
+    { date: "2026-09-02", weight_kg: 100, body_fat_pct: 20, muscle_pct: 40 },
+    { date: "2026-09-03", weight_kg: null, body_fat_pct: 19, muscle_pct: 41 },
+  ]);
+  assert.deepEqual(result.map((point) => point.date), ["2026-09-02"]);
+  assert.equal(bodyScoreTrend([]).length, 0);
 });
 
 test("summarizeFoodRange groups by date and sums day and interval nutrients", () => {
