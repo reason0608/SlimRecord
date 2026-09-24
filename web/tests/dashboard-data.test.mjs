@@ -4,6 +4,7 @@ import test from "node:test";
 import {
   bodyComposition,
   bodyScoreTrend,
+  competitionLeaderboard,
   inclusiveRangeStart,
   latestMassReading,
   summarizeFoodRange,
@@ -19,6 +20,21 @@ test("bodyComposition calculates fat and fat-free mass from the same day's readi
     { fatMassKg: null, fatFreeMassKg: null, muscleMassKg: null },
   );
   assert.equal(bodyComposition({ weight_kg: 80, body_fat_pct: 105 }).fatMassKg, null);
+});
+
+test("competitionLeaderboard ranks every participant from direct InBody mass readings", () => {
+  const result = competitionLeaderboard([
+    { date: "2026-09-01", user: "Reason", body_fat_mass_kg: 20, muscle_mass_kg: 40 },
+    { date: "2026-09-10", user: "Reason", body_fat_mass_kg: 18, muscle_mass_kg: 42 },
+    { date: "2026-09-01", user: "Chloe", body_fat_mass_kg: 10, muscle_mass_kg: 20 },
+    { date: "2026-09-10", user: "Chloe", body_fat_mass_kg: 9, muscle_mass_kg: 20 },
+    { date: "2026-09-10", user: "Incomplete", body_fat_mass_kg: null, muscle_mass_kg: 30 },
+  ]);
+  assert.deepEqual(result.map(({ user, rank }) => ({ user, rank })), [
+    { user: "Reason", rank: 1 }, { user: "Chloe", rank: 2 },
+  ]);
+  assert.equal(result[0].score, 25);
+  assert.equal(result[1].score, 10);
 });
 
 test("latestMassReading never joins a newer percentage to an older weight", () => {

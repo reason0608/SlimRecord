@@ -21,6 +21,10 @@ const ranges = [
     ["user", "day_type", "calories", "protein", "fat", "carbs", "effective_from"],
     ["Reason", "rest", 1850, 140, 60, 188, "2026/9/1"],
   ] },
+  { values: [
+    ["date", "user", "body_fat_mass_kg", "muscle_mass_kg", "score", "rank", "note"],
+    ["2026/9/9", "Reason", 20, 40, 0, 1, "初始量測"],
+  ] },
 ];
 
 test("parseSheetData preserves missing measurements and genuine zeroes", () => {
@@ -32,6 +36,8 @@ test("parseSheetData preserves missing measurements and genuine zeroes", () => {
   assert.equal(result.foodLogs[0].calories, 160);
   assert.equal(result.exerciseLogs[0].steps, null);
   assert.equal(result.goals[0].effective_from, "2026-09-01");
+  assert.equal(result.inBodyLogs[0].body_fat_mass_kg, 20);
+  assert.equal(result.inBodyLogs[0].score, 0);
 });
 
 test("sheetDate accepts serial and year-first formatted values", () => {
@@ -41,7 +47,7 @@ test("sheetDate accepts serial and year-first formatted values", () => {
 });
 
 test("parseSheetData reports missing columns and tabs", () => {
-  assert.throws(() => parseSheetData(ranges.slice(0, 3)), /四個必要工作表/);
+  assert.throws(() => parseSheetData(ranges.slice(0, 4)), /五個必要工作表/);
   const broken = structuredClone(ranges);
   broken[0].values[0][0] = "日期";
   assert.throws(() => parseSheetData(broken), /DailyLogs 缺少欄位：date/);
@@ -54,7 +60,7 @@ test("fetchSheetData uses read-only batchGet and reports authorization errors", 
     return { ok: true, json: async () => ({ valueRanges: ranges }) };
   });
   assert.equal(data.foodLogs.length, 1);
-  assert.equal(seen.url.searchParams.getAll("ranges").length, 4);
+  assert.equal(seen.url.searchParams.getAll("ranges").length, 5);
   assert.equal(seen.url.searchParams.get("valueRenderOption"), "UNFORMATTED_VALUE");
   assert.equal(seen.options.headers.Authorization, "Bearer short-token");
   await assert.rejects(

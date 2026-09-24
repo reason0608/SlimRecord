@@ -3,6 +3,7 @@ const SHEETS = {
   FoodLogs: ["id", "date", "user", "meal_type", "food_name", "quantity", "unit", "calories", "protein_g", "fat_g", "carbs_g", "note"],
   ExerciseLogs: ["date", "user", "exercise_type", "duration_minutes", "intensity", "steps", "note"],
   Goals: ["user", "day_type", "calories", "protein", "fat", "carbs", "effective_from"],
+  InBodyLogs: ["date", "user", "body_fat_mass_kg", "muscle_mass_kg", "score", "rank", "note"],
 };
 
 /** Normalize spreadsheet dates to sortable ISO dates without browser time-zone conversion. */
@@ -48,12 +49,12 @@ function readRows(valueRange, sheetName) {
   );
 }
 
-/** Convert four normalized Google Sheets tabs into the dashboard data model. */
+/** Convert normalized Google Sheets tabs into the dashboard data model. */
 export function parseSheetData(valueRanges) {
-  if (!Array.isArray(valueRanges) || valueRanges.length !== 4) {
-    throw new Error("找不到四個必要工作表：DailyLogs、FoodLogs、ExerciseLogs、Goals。");
+  if (!Array.isArray(valueRanges) || valueRanges.length !== 5) {
+    throw new Error("找不到五個必要工作表：DailyLogs、FoodLogs、ExerciseLogs、Goals、InBodyLogs。");
   }
-  const [daily, food, exercise, goals] = Object.keys(SHEETS).map((name, index) => readRows(valueRanges[index], name));
+  const [daily, food, exercise, goals, inBody] = Object.keys(SHEETS).map((name, index) => readRows(valueRanges[index], name));
   return {
     dailyLogs: daily.filter((row) => row.date && row.user).map((row) => ({
       date: sheetDate(row.date), user: String(row.user).trim(),
@@ -80,6 +81,12 @@ export function parseSheetData(valueRanges) {
       calories: numberOrNull(row.calories) ?? 0, protein: numberOrNull(row.protein) ?? 0,
       fat: numberOrNull(row.fat) ?? 0, carbs: numberOrNull(row.carbs) ?? 0,
       effective_from: sheetDate(row.effective_from),
+    })),
+    inBodyLogs: inBody.filter((row) => row.date && row.user).map((row) => ({
+      date: sheetDate(row.date), user: String(row.user).trim(),
+      body_fat_mass_kg: numberOrNull(row.body_fat_mass_kg),
+      muscle_mass_kg: numberOrNull(row.muscle_mass_kg),
+      score: numberOrNull(row.score), rank: numberOrNull(row.rank), note: textOrNull(row.note),
     })),
   };
 }

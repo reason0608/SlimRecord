@@ -37,9 +37,10 @@ import {
   signedChange,
 } from "@/lib/metrics";
 import { fetchSheetData } from "@/lib/sheets-data";
-import { bodyComposition, bodyScoreTrend, inclusiveRangeStart, latestMassReading, summarizeFoodRange } from "@/lib/dashboard-data";
+import { bodyComposition, bodyScoreTrend, competitionLeaderboard, inclusiveRangeStart, latestMassReading, summarizeFoodRange } from "@/lib/dashboard-data";
 
 type UserName = "Reason" | "Chloe";
+type DashboardView = UserName | "All";
 type DailyLog = {
   date: string;
   user: UserName;
@@ -79,12 +80,22 @@ type Goal = {
   carbs: number;
   effective_from: string;
 };
+type InBodyLog = {
+  date: string;
+  user: string;
+  body_fat_mass_kg: number | null;
+  muscle_mass_kg: number | null;
+  score: number | null;
+  rank: number | null;
+  note: string | null;
+};
 
 type DashboardData = {
   dailyLogs: DailyLog[];
   foodLogs: FoodLog[];
   exerciseLogs: ExerciseLog[];
   goals: Goal[];
+  inBodyLogs?: InBodyLog[];
 };
 
 const demoData = fitnessData as DashboardData;
@@ -174,12 +185,13 @@ function NutrientProgress({ label, actual, target, unit }: { label: string; actu
 }
 
 export default function Home() {
-  const [user, setUser] = useState<UserName>("Reason");
+  const [view, setView] = useState<DashboardView>("Reason");
   const [liveData, setLiveData] = useState<DashboardData | null>(null);
   const [googleReady, setGoogleReady] = useState(false);
   const [loadingSheet, setLoadingSheet] = useState(false);
   const [sheetError, setSheetError] = useState("");
   const data = liveData ?? demoData;
+  const user: UserName = view === "All" ? "Reason" : view;
 
   useEffect(() => {
     if (!googleClientId) return;
@@ -293,6 +305,21 @@ export default function Home() {
     const goal = goalForDate(data.goals, user, daily?.exercised ? "exercise" : "rest", date);
     return goal && (nutritionByDate[date]?.protein_g ?? 0) >= goal.protein;
   }).length;
+  const competitionRecords = useMemo(() => {
+    if (data.inBodyLogs?.length) return data.inBodyLogs;
+    return data.dailyLogs.map((entry) => {
+      const composition = bodyComposition(entry);
+      return {
+        date: entry.date,
+        user: entry.user,
+        body_fat_mass_kg: composition.fatMassKg,
+        muscle_mass_kg: composition.muscleMassKg,
+      };
+    });
+  }, [data]);
+  const leaderboard = useMemo(() => competitionLeaderboard(competitionRecords), [competitionRecords]);
+  const personalStanding = leaderboard.find((entry) => entry.user === user) ?? null;
+  const currentRank = personalStanding?.rank ?? null;
 
   const changeDate = (date: string) => setSelectedDateByUser((previous) => ({ ...previous, [user]: date }));
 
@@ -308,11 +335,11 @@ export default function Home() {
             </div>
           </div>
           <div className="flex rounded-2xl bg-white/10 p-1" aria-label="選擇使用者">
-            {(["Reason", "Chloe"] as UserName[]).map((name) => (
+            {(["Reason", "Chloe", "All"] as DashboardView[]).map((name) => (
               <button
                 key={name}
-                onClick={() => setUser(name)}
-                className={`min-w-24 rounded-xl px-4 py-2 text-sm font-semibold transition ${user === name ? "bg-white text-[#173f35] shadow-sm" : "text-white/70 hover:text-white"}`}
+                onClick={() => setView(name)}
+                className={`min-w-24 rounded-xl px-4 py-2 text-sm font-semibold transition ${view === name ? "bg-white text-[#173f35] shadow-sm" : "text-white/70 hover:text-white"}`}
               >
                 {name}
               </button>
@@ -333,12 +360,52 @@ export default function Home() {
             </button>
           )}
         </div>
+        {view === "All" ? (
+          <section className="space-y-5">
+            <div className="grid gap-3 sm:grid-cols-3">
+              <MetricCard label="參賽人數" value={String(leaderboard.length)} unit="人" detail="已填入至少一筆完整 InBody" icon={Trophy} />
+              <MetricCard label="目前領先" value={leaderboard[0]?.user ?? "—"} unit="" detail={leaderboard[0] ? `${numberLabel(leaderboard[0].score, 2)} 分` : "尚無完整量測"} icon={Sparkles} />
+              <MetricCard label="最新量測" value={leaderboard.map((entry) => entry.latestDate).sort().at(-1) ?? "—"} unit="" detail="所有參賽者最近一次量測日期" icon={CalendarDays} />
+            </div>
+            <Card className="border-0 bg-white shadow-sm">
+              <CardHeader>
+                <CardTitle className="font-display text-xl">所有參賽者排行榜</CardTitle>
+                <p className="text-sm text-slate-500">以每位參賽者第一筆完整 InBody 為基準，依最新一筆量測計算；同分並列。</p>
+              </CardHeader>
+              <CardContent>
+                {leaderboard.length ? (
+                  <div className="overflow-x-auto">
+                    <table className="w-full min-w-[760px] text-sm">
+                      <thead><tr className="border-b border-slate-200 text-left text-xs text-slate-500">
+                        <th className="px-3 py-3 text-center">排名</th><th className="px-3 py-3">參賽者</th><th className="px-3 py-3 text-right">分數</th>
+                        <th className="px-3 py-3 text-right">體脂變化</th><th className="px-3 py-3 text-right">肌肉變化</th>
+                        <th className="px-3 py-3 text-right">目前體脂重</th><th className="px-3 py-3 text-right">目前肌肉重</th><th className="px-3 py-3 text-right">量測日</th>
+                      </tr></thead>
+                      <tbody>{leaderboard.map((entry) => (
+                        <tr key={entry.user} className="border-b border-slate-100 last:border-0">
+                          <td className="px-3 py-4 text-center"><span className={`inline-grid h-9 w-9 place-items-center rounded-full font-bold ${entry.rank <= 3 ? "bg-[#d7f49b] text-[#173f35]" : "bg-slate-100 text-slate-600"}`}>{entry.rank}</span></td>
+                          <td className="px-3 py-4 font-semibold text-slate-900">{entry.user}</td>
+                          <td className="px-3 py-4 text-right text-lg font-bold tabular-nums text-violet-700">{numberLabel(entry.score, 2)}</td>
+                          <td className="px-3 py-4 text-right tabular-nums">{numberLabel(entry.fatChangePercent, 2)}%</td>
+                          <td className="px-3 py-4 text-right tabular-nums">{numberLabel(entry.muscleChangePercent, 2)}%</td>
+                          <td className="px-3 py-4 text-right tabular-nums">{numberLabel(entry.fatMassKg, 2)} kg</td>
+                          <td className="px-3 py-4 text-right tabular-nums">{numberLabel(entry.muscleMassKg, 2)} kg</td>
+                          <td className="px-3 py-4 text-right text-slate-500">{entry.latestDate}</td>
+                        </tr>
+                      ))}</tbody>
+                    </table>
+                  </div>
+                ) : <div className="grid min-h-52 place-items-center text-center text-slate-500">請先在 InBodyLogs 工作表填入參賽者量測資料。</div>}
+              </CardContent>
+            </Card>
+          </section>
+        ) : (<>
         <section className="mb-6 grid gap-3 sm:grid-cols-2 xl:grid-cols-5">
           <MetricCard label="目前體重" value={numberLabel(currentWeight)} unit="kg" detail={`起始至今 ${signedChange(currentWeight, startingWeight)} kg`} icon={Scale} />
           <MetricCard label="目前體脂重量" value={numberLabel(latestFat?.massKg ?? null)} unit="kg" detail={latestFat ? `體脂率 ${numberLabel(latestFat.percentage)}% · ${latestFat.date}` : "需同日體重與體脂率"} icon={Activity} />
           <MetricCard label="估計肌肉重量" value={numberLabel(latestMuscle?.massKg ?? null)} unit="kg" detail={latestMuscle ? `肌肉率 ${numberLabel(latestMuscle.percentage)}% · ${latestMuscle.date}` : "需同日體重與肌肉率"} icon={Dumbbell} />
           <MetricCard label="蛋白質達標" value={`${proteinTargetDays}`} unit={`/ ${trackedDays} 天`} detail="依運動日／休息日目標判斷" icon={Sparkles} />
-          <MetricCard label="目前分數" value={numberLabel(latestScore?.score ?? null, 2)} unit="分" detail="公式：體脂減少% + 3 × MAX(肌肉增加%, 0)" icon={Trophy} />
+          <MetricCard label="目前分數" value={numberLabel(personalStanding?.score ?? latestScore?.score ?? null, 2)} unit="分" detail={currentRank ? `目前第 ${currentRank} 名 · 體脂減少% + 3 × 正肌肉增幅` : "尚無完整 InBody 排名資料"} icon={Trophy} />
         </section>
 
         <Tabs defaultValue="overview" className="space-y-5">
@@ -560,10 +627,11 @@ export default function Home() {
             </Card>
           </TabsContent>
         </Tabs>
+        </>)}
 
         <footer className="mt-8 flex flex-col gap-2 border-t border-emerald-950/10 py-6 text-xs text-slate-500 sm:flex-row sm:items-center sm:justify-between">
           <p>{liveData ? "即時讀取試算表；重新載入頁面後須再次授權。空白量測不視為 0。" : "目前為示範資料；空白量測不視為 0。"}</p>
-          <p>最近資料日期：{availableDates.at(-1) ?? "—"}</p>
+          <p>最近資料日期：{view === "All" ? leaderboard.map((entry) => entry.latestDate).sort().at(-1) ?? "—" : availableDates.at(-1) ?? "—"}</p>
         </footer>
       </div>
     </main>

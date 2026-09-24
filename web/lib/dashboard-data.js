@@ -49,6 +49,38 @@ export function bodyScoreTrend(records) {
   });
 }
 
+/** Build a competition leaderboard from direct InBody mass readings. */
+export function competitionLeaderboard(records) {
+  const grouped = new Map();
+  for (const record of records) {
+    const fatMassKg = Number(record.body_fat_mass_kg);
+    const muscleMassKg = Number(record.muscle_mass_kg);
+    if (!record.user || !record.date || !Number.isFinite(fatMassKg) || fatMassKg <= 0 ||
+        !Number.isFinite(muscleMassKg) || muscleMassKg <= 0) continue;
+    const entries = grouped.get(record.user) ?? [];
+    entries.push({ ...record, fatMassKg, muscleMassKg });
+    grouped.set(record.user, entries);
+  }
+  const leaderboard = [];
+  for (const [user, entries] of grouped) {
+    entries.sort((a, b) => a.date.localeCompare(b.date));
+    const baseline = entries[0];
+    const latest = entries.at(-1);
+    const fatChangePercent = ((baseline.fatMassKg - latest.fatMassKg) / baseline.fatMassKg) * 100;
+    const muscleChangePercent = ((latest.muscleMassKg - baseline.muscleMassKg) / baseline.muscleMassKg) * 100;
+    leaderboard.push({
+      user, latestDate: latest.date, fatMassKg: latest.fatMassKg, muscleMassKg: latest.muscleMassKg,
+      fatChangePercent, muscleChangePercent,
+      score: fatChangePercent + 3 * Math.max(muscleChangePercent, 0),
+    });
+  }
+  leaderboard.sort((a, b) => b.score - a.score || a.user.localeCompare(b.user));
+  return leaderboard.map((entry, index) => ({
+    ...entry,
+    rank: index > 0 && entry.score === leaderboard[index - 1].score ? leaderboard[index - 1].rank : index + 1,
+  }));
+}
+
 /** Group food entries by ISO date (newest first), with per-day and whole-range totals. */
 export function summarizeFoodRange(logs, startDate = "", endDate = "") {
   const emptyTotals = () => ({ calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 });
