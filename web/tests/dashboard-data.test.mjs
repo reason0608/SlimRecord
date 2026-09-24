@@ -7,6 +7,7 @@ import {
   competitionLeaderboard,
   inclusiveRangeStart,
   latestMassReading,
+  mergeCompetitionRecords,
   summarizeFoodRange,
 } from "../lib/dashboard-data.js";
 
@@ -35,6 +36,18 @@ test("competitionLeaderboard ranks every participant from direct InBody mass rea
   ]);
   assert.equal(result[0].score, 25);
   assert.equal(result[1].score, 10);
+});
+
+test("mergeCompetitionRecords fills missing InBody dates from DailyLogs and prefers direct measurements", () => {
+  const result = mergeCompetitionRecords([
+    { date: "2026-09-24", user: "Reason", weight_kg: 80, body_fat_pct: 25, muscle_pct: 40 },
+    { date: "2026-09-24", user: "Chloe", weight_kg: null, body_fat_pct: 25, muscle_pct: 40 },
+  ], [
+    { date: "2026-09-24", user: "Reason", body_fat_mass_kg: 19, muscle_mass_kg: 33 },
+  ]);
+  assert.deepEqual(result, [
+    { date: "2026-09-24", user: "Reason", body_fat_mass_kg: 19, muscle_mass_kg: 33 },
+  ]);
 });
 
 test("latestMassReading never joins a newer percentage to an older weight", () => {

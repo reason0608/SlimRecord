@@ -37,7 +37,7 @@ import {
   signedChange,
 } from "@/lib/metrics";
 import { fetchSheetData } from "@/lib/sheets-data";
-import { bodyComposition, bodyScoreTrend, competitionLeaderboard, inclusiveRangeStart, latestMassReading, summarizeFoodRange } from "@/lib/dashboard-data";
+import { bodyComposition, bodyScoreTrend, competitionLeaderboard, inclusiveRangeStart, latestMassReading, mergeCompetitionRecords, summarizeFoodRange } from "@/lib/dashboard-data";
 
 type UserName = "Reason" | "Chloe";
 type DashboardView = UserName | "All";
@@ -306,16 +306,7 @@ export default function Home() {
     return goal && (nutritionByDate[date]?.protein_g ?? 0) >= goal.protein;
   }).length;
   const competitionRecords = useMemo(() => {
-    if (data.inBodyLogs?.length) return data.inBodyLogs;
-    return data.dailyLogs.map((entry) => {
-      const composition = bodyComposition(entry);
-      return {
-        date: entry.date,
-        user: entry.user,
-        body_fat_mass_kg: composition.fatMassKg,
-        muscle_mass_kg: composition.muscleMassKg,
-      };
-    });
+    return mergeCompetitionRecords(data.dailyLogs, data.inBodyLogs);
   }, [data]);
   const leaderboard = useMemo(() => competitionLeaderboard(competitionRecords), [competitionRecords]);
   const personalStanding = leaderboard.find((entry) => entry.user === user) ?? null;

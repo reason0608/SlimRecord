@@ -81,6 +81,27 @@ export function competitionLeaderboard(records) {
   }));
 }
 
+/** Merge derived DailyLogs masses with direct InBody entries.
+ * Direct InBody values win when both sources contain the same participant/date.
+ */
+export function mergeCompetitionRecords(dailyLogs, inBodyLogs = []) {
+  const recordsByKey = new Map();
+  for (const entry of dailyLogs) {
+    const composition = bodyComposition(entry);
+    if (composition.fatMassKg == null || composition.muscleMassKg == null) continue;
+    recordsByKey.set(`${entry.user}\u0000${entry.date}`, {
+      date: entry.date,
+      user: entry.user,
+      body_fat_mass_kg: composition.fatMassKg,
+      muscle_mass_kg: composition.muscleMassKg,
+    });
+  }
+  for (const entry of inBodyLogs) {
+    recordsByKey.set(`${entry.user}\u0000${entry.date}`, entry);
+  }
+  return [...recordsByKey.values()];
+}
+
 /** Group food entries by ISO date (newest first), with per-day and whole-range totals. */
 export function summarizeFoodRange(logs, startDate = "", endDate = "") {
   const emptyTotals = () => ({ calories: 0, protein_g: 0, fat_g: 0, carbs_g: 0 });
